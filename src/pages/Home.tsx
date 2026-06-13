@@ -15,6 +15,7 @@ import {
   XCircle,
   HelpCircle,
   Settings,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -102,7 +103,14 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <header className="text-center mb-10">
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end mb-2 gap-2">
+            <button
+              onClick={() => navigate('/shop')}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50 border border-emerald-100 transition-all text-sm font-medium bg-white shadow-sm"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              买菜商城
+            </button>
             <button
               onClick={() => navigate('/settings')}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-gray-500 hover:text-orange-600 hover:bg-orange-50 transition-all text-sm font-medium"
@@ -272,6 +280,7 @@ export default function Home() {
               {analysis ? (
                 <AnalysisCard
                   analysis={analysis}
+                  recipeText={currentRecipeText}
                   onGenerateSimplified={(a: RecipeAnalysis): SimplifiedRecipe => {
                     return generateSimplifiedRecipe(currentRecipeText, a);
                   }}

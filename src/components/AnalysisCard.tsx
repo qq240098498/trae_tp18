@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { RecipeAnalysis, SimplifiedRecipe } from '@/types/recipe';
-import { saveSimplificationRating } from '@/lib/recipeAnalyzer';
+import { saveSimplificationRating, extractIngredients, extractRecipeName } from '@/lib/recipeAnalyzer';
 import { useDifficultyConfigStore } from '@/store/difficultyConfig';
 import DifficultyStars from './DifficultyStars';
 import {
@@ -20,12 +21,14 @@ import {
   Minus,
   ChevronDown,
   ChevronUp,
+  ShoppingBag,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface AnalysisCardProps {
   analysis: RecipeAnalysis;
   onGenerateSimplified?: (analysis: RecipeAnalysis) => SimplifiedRecipe;
+  recipeText?: string;
 }
 
 const iconMap: Record<string, React.ElementType> = {
@@ -296,13 +299,31 @@ function SimplifiedRecipeSection({
 export default function AnalysisCard({
   analysis,
   onGenerateSimplified,
+  recipeText,
 }: AnalysisCardProps) {
+  const navigate = useNavigate();
   const detectedTechniques = analysis.specialTechniques.filter((t) => t.detected);
   const detectedTools = analysis.tools.filter((t) => t.detected);
   const [showSimplified, setShowSimplified] = useState(!!analysis.simplifiedRecipe);
   const [simplified, setSimplified] = useState<SimplifiedRecipe | null>(analysis.simplifiedRecipe || null);
   const [isGenerating, setIsGenerating] = useState(false);
   const complexityLabels = useDifficultyConfigStore((s) => s.config.complexityLabels);
+
+  const handleGoToShop = () => {
+    if (!recipeText) {
+      navigate('/shop');
+      return;
+    }
+    const recipeName = extractRecipeName(recipeText);
+    const ingredients = extractIngredients(recipeText);
+    navigate('/shop', {
+      state: {
+        recipeName,
+        ingredients,
+        fromAnalysis: true,
+      },
+    });
+  };
 
   const handleGenerateSimplified = async () => {
     setIsGenerating(true);
@@ -518,6 +539,48 @@ export default function AnalysisCard({
             </button>
           </div>
         )}
+
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-5 border border-emerald-200">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md shadow-emerald-500/30">
+              <ShoppingBag className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-bold text-gray-800 mb-1">不想自己买食材？</h4>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                AI 已识别菜谱所需食材，一键前往鲜蔬商城，精选食材套餐直接配送到家，新鲜又省心
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="bg-white/70 rounded-lg p-2 text-center">
+              <div className="text-lg font-bold text-emerald-600">🥬</div>
+              <div className="text-xs text-gray-500">精选食材</div>
+            </div>
+            <div className="bg-white/70 rounded-lg p-2 text-center">
+              <div className="text-lg font-bold text-emerald-600">🚚</div>
+              <div className="text-xs text-gray-500">次日送达</div>
+            </div>
+            <div className="bg-white/70 rounded-lg p-2 text-center">
+              <div className="text-lg font-bold text-emerald-600">💰</div>
+              <div className="text-xs text-gray-500">套餐优惠</div>
+            </div>
+          </div>
+          <button
+            onClick={handleGoToShop}
+            className={cn(
+              'w-full py-3 rounded-xl font-semibold text-white transition-all',
+              'bg-gradient-to-r from-emerald-500 to-teal-500',
+              'hover:from-emerald-600 hover:to-teal-600',
+              'flex items-center justify-center gap-2',
+              'shadow-lg shadow-emerald-500/30'
+            )}
+          >
+            <ShoppingBag className="w-5 h-5" />
+            去商城购买食材
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

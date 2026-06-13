@@ -405,7 +405,7 @@ export async function fetchRecipeFromUrl(url: string): Promise<{ success: boolea
   }
 }
 
-function extractRecipeName(text: string): string {
+export function extractRecipeName(text: string): string {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const firstLine = lines[0] || '';
   const nameMatch = firstLine.match(/^[【[]?(菜名|名称|菜谱)?[】\]]?\s*([^【[]+)/);
@@ -421,7 +421,7 @@ function extractRecipeName(text: string): string {
   return '家常菜谱';
 }
 
-function extractIngredients(text: string): string[] {
+export function extractIngredients(text: string): string[] {
   const ingredientSection = text.match(/(食材|原料|材料|配料|用料)[\s\S]{0,800}/i);
   const targetText = ingredientSection ? ingredientSection[0] : text;
   const lines = targetText.split(/[，,、;；\n]+/).map(s => s.trim()).filter(s => {
