@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { RecipeAnalysis, InputMode } from '@/types/recipe';
-import { analyzeRecipe, fetchRecipeFromUrl, SAMPLE_RECIPES } from '@/lib/recipeAnalyzer';
+import type { RecipeAnalysis, InputMode, RecipeValidationResult } from '@/types/recipe';
+import { analyzeRecipe, fetchRecipeFromUrl, SAMPLE_RECIPES, validateRecipeContent } from '@/lib/recipeAnalyzer';
 import AnalysisCard from '@/components/AnalysisCard';
 import {
   ChefHat,
@@ -10,6 +10,8 @@ import {
   Loader2,
   AlertCircle,
   Lightbulb,
+  XCircle,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -18,6 +20,7 @@ export default function Home() {
   const [inputText, setInputText] = useState('');
   const [inputUrl, setInputUrl] = useState('');
   const [analysis, setAnalysis] = useState<RecipeAnalysis | null>(null);
+  const [validationError, setValidationError] = useState<{ message: string; validation: RecipeValidationResult } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +28,7 @@ export default function Home() {
     setIsLoading(true);
     setError(null);
     setAnalysis(null);
+    setValidationError(null);
 
     try {
       let content = '';
@@ -54,7 +58,15 @@ export default function Home() {
 
       await new Promise(resolve => setTimeout(resolve, 800));
       const result = analyzeRecipe(content);
-      setAnalysis(result);
+      
+      if (result.success) {
+        setAnalysis(result.data);
+      } else {
+        setValidationError({
+          message: (result as { success: false; error: string; validation: RecipeValidationResult }).error,
+          validation: (result as { success: false; error: string; validation: RecipeValidationResult }).validation,
+        });
+      }
     } catch (err) {
       setError('分析失败，请稍后重试');
       console.error(err);
@@ -68,6 +80,7 @@ export default function Home() {
     setInputText(sampleContent);
     setAnalysis(null);
     setError(null);
+    setValidationError(null);
   };
 
   const handleClear = () => {
@@ -75,6 +88,7 @@ export default function Home() {
     setInputUrl('');
     setAnalysis(null);
     setError(null);
+    setValidationError(null);
   };
 
   return (
@@ -241,6 +255,78 @@ export default function Home() {
             <div className="sticky top-8">
               {analysis ? (
                 <AnalysisCard analysis={analysis} />
+              ) : validationError ? (
+                <div className="bg-white rounded-2xl shadow-lg border border-red-200 overflow-hidden">
+                  <div className="bg-gradient-to-r from-red-500 to-rose-500 p-6 text-white">
+                    <div className="flex items-center gap-3">
+                      <XCircle className="w-8 h-8" />
+                      <div>
+                        <h2 className="text-xl font-bold">无法识别菜谱</h2>
+                        <p className="text-red-100 text-sm">请检查输入内容</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="bg-red-50 border border-red-100 rounded-xl p-4">
+                      <p className="text-red-700 font-medium">{validationError.message}</p>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-gray-700">菜谱匹配度</span>
+                        <span className={cn(
+                          'text-sm font-bold',
+                          validationError.validation.confidence < 30 ? 'text-red-600' : 
+                          validationError.validation.confidence < 50 ? 'text-yellow-600' : 'text-green-600'
+                        )}>
+                          {validationError.validation.confidence}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={cn(
+                            'h-2 rounded-full transition-all',
+                            validationError.validation.confidence < 30 ? 'bg-red-500' : 
+                            validationError.validation.confidence < 50 ? 'bg-yellow-500' : 'bg-green-500'
+                          )}
+                          style={{ width: `${validationError.validation.confidence}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {validationError.validation.issues.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                          <HelpCircle className="w-4 h-4" />
+                          检测到的问题
+                        </div>
+                        <ul className="space-y-1.5">
+                          {validationError.validation.issues.map((issue, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-sm text-gray-600">
+                              <span className="text-red-500 mt-0.5">•</span>
+                              {issue}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                      <div className="flex items-start gap-2">
+                        <Lightbulb className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-sm text-blue-700">
+                          <p className="font-medium mb-1">请确保输入包含：</p>
+                          <ul className="list-disc list-inside space-y-0.5 text-blue-600">
+                            <li>「食材」「材料」或「用料」等关键词</li>
+                            <li>「做法」「步骤」或「制作方法」等说明</li>
+                            <li>编号的操作步骤（1. 2. 3. ...）</li>
+                            <li>常见烹饪动作（炒、煎、蒸、煮等）</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
                   <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">

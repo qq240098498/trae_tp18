@@ -23,3 +23,13 @@ export interface RecipeAnalysis {
 }
 
 export type InputMode = 'text' | 'url';
+
+export interface RecipeValidationResult {
+  isValid: boolean;
+  confidence: number;
+  issues: string[];
+}
+
+export type AnalysisResult = 
+  | { success: true; data: RecipeAnalysis }
+  | { success: false; error: string; validation: RecipeValidationResult };

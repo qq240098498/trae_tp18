@@ -1,4 +1,4 @@
-import type { RecipeAnalysis, SpecialTechnique, ToolRequirement } from '@/types/recipe';
+import type { RecipeAnalysis, SpecialTechnique, ToolRequirement, AnalysisResult, RecipeValidationResult } from '@/types/recipe';
 
 const SPECIAL_TECHNIQUES: { name: string; keywords: string[] }[] = [
   { name: '颠勺', keywords: ['颠勺', '颠锅', '翻炒均匀', '大火快炒', '抛炒'] },
@@ -32,6 +32,73 @@ const SIMPLE_INGREDIENTS = [
   '盐', '糖', '酱油', '醋', '油', '料酒', '葱', '姜', '蒜',
   '鸡蛋', '鸡精', '味精', '生抽', '老抽', '蚝油',
 ];
+
+const RECIPE_KEYWORDS = [
+  '食材', '材料', '原料', '配料', '用料', '主料', '辅料',
+  '做法', '步骤', '制法', '制作方法', '烹饪方法', '操作步骤',
+  '准备', '调料', '调味料',
+];
+
+const COOKING_VERBS = [
+  '炒', '煎', '蒸', '煮', '炸', '烤', '炖', '焖', '煲', '烧',
+  '卤', '酱', '腌', '拌', '炝', '烘', '焙', '煸', '汆', '烫',
+  '切', '剁', '拍', '砍', '剥', '刮', '洗', '泡', '焯', '汆',
+  '翻炒', '煸炒', '炖煮', '烘烤', '油炸', '清蒸', '红烧', '白切',
+];
+
+export function validateRecipeContent(text: string): RecipeValidationResult {
+  const issues: string[] = [];
+  let score = 0;
+
+  const hasIngredientKeyword = RECIPE_KEYWORDS.slice(0, 7).some(kw => text.includes(kw));
+  const hasMethodKeyword = RECIPE_KEYWORDS.slice(7).some(kw => text.includes(kw));
+  const hasNumberedSteps = /^\s*[\d]+[\.、\s]/m.test(text);
+  const hasBulletSteps = /^\s*[•·\-●○◆★]/m.test(text);
+  const hasCookingVerb = COOKING_VERBS.some(verb => text.includes(verb));
+  const hasChineseChars = /[\u4e00-\u9fa5]/.test(text);
+  const hasIngredientList = /[，,、;；].*[，,、;；]/.test(text);
+
+  if (hasIngredientKeyword) score += 25;
+  if (hasMethodKeyword) score += 25;
+  if (hasNumberedSteps) score += 20;
+  if (hasBulletSteps) score += 10;
+  if (hasCookingVerb) score += 15;
+  if (hasIngredientList) score += 10;
+
+  const lineCount = text.split('\n').filter(l => l.trim().length > 0).length;
+  if (lineCount >= 3) score += 5;
+  if (lineCount >= 6) score += 5;
+
+  if (text.trim().length < 20) {
+    issues.push('内容太短，请输入完整的菜谱内容');
+    score = Math.max(0, score - 50);
+  }
+
+  if (!hasChineseChars) {
+    issues.push('未检测到中文字符，请输入中文菜谱');
+    score = Math.max(0, score - 30);
+  }
+
+  if (!hasIngredientKeyword && !hasMethodKeyword) {
+    issues.push('未检测到「食材」「做法」「步骤」等菜谱关键词');
+  }
+
+  if (!hasNumberedSteps && !hasBulletSteps && !hasMethodKeyword) {
+    issues.push('未检测到编号步骤或做法说明');
+  }
+
+  if (!hasCookingVerb) {
+    issues.push('未检测到常见烹饪动作（如炒、煎、蒸、煮等）');
+  }
+
+  const isValid = score >= 30;
+
+  return {
+    isValid,
+    confidence: Math.min(100, Math.max(0, score)),
+    issues,
+  };
+}
 
 function detectSpecialTechniques(text: string): SpecialTechnique[] {
   return SPECIAL_TECHNIQUES.map(({ name, keywords }) => ({
@@ -184,8 +251,22 @@ function generateSuitableFor(analysis: RecipeAnalysis): string {
   return `专业级挑战！${detectedTechs.length > 0 ? `需精通${detectedTechs.slice(0, 3).join('、')}等高阶技能` : '工艺复杂'}，适合资深厨艺爱好者或专业厨师尝试。`;
 }
 
-export function analyzeRecipe(input: string): RecipeAnalysis {
+export function analyzeRecipe(input: string): AnalysisResult {
   const text = input.trim();
+  
+  const validation = validateRecipeContent(text);
+  
+  if (!validation.isValid) {
+    const errorMessage = validation.issues.length > 0 
+      ? `无法识别为有效菜谱：${validation.issues[0]}`
+      : '无法识别为有效菜谱，请输入完整的菜谱内容（包括食材和做法步骤）';
+    
+    return {
+      success: false,
+      error: errorMessage,
+      validation,
+    };
+  }
   
   const specialTechniques = detectSpecialTechniques(text);
   const tools = detectTools(text);
@@ -214,7 +295,10 @@ export function analyzeRecipe(input: string): RecipeAnalysis {
   
   analysis.suitableFor = generateSuitableFor(analysis);
   
-  return analysis;
+  return {
+    success: true,
+    data: analysis,
+  };
 }
 
 export function extractDomainFromUrl(url: string): string {
