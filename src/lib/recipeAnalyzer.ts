@@ -1,4 +1,4 @@
-import type { RecipeAnalysis, SpecialTechnique, ToolRequirement, AnalysisResult, RecipeValidationResult } from '@/types/recipe';
+import type { RecipeAnalysis, SpecialTechnique, ToolRequirement, AnalysisResult, RecipeValidationResult, SimplifiedRecipe } from '@/types/recipe';
 
 const SPECIAL_TECHNIQUES: { name: string; keywords: string[] }[] = [
   { name: '颠勺', keywords: ['颠勺', '颠锅', '翻炒均匀', '大火快炒', '抛炒'] },
@@ -28,10 +28,10 @@ const COMPLEX_INGREDIENTS = [
   '面包糠', '酥皮', '千层皮', '面团',
 ];
 
-const SIMPLE_INGREDIENTS = [
-  '盐', '糖', '酱油', '醋', '油', '料酒', '葱', '姜', '蒜',
-  '鸡蛋', '鸡精', '味精', '生抽', '老抽', '蚝油',
-];
+// const SIMPLE_INGREDIENTS = [
+//   '盐', '糖', '酱油', '醋', '油', '料酒', '葱', '姜', '蒜',
+//   '鸡蛋', '鸡精', '味精', '生抽', '老抽', '蚝油',
+// ];
 
 const RECIPE_KEYWORDS = [
   '食材', '材料', '原料', '配料', '用料', '主料', '辅料',
@@ -52,7 +52,7 @@ export function validateRecipeContent(text: string): RecipeValidationResult {
 
   const hasIngredientKeyword = RECIPE_KEYWORDS.slice(0, 7).some(kw => text.includes(kw));
   const hasMethodKeyword = RECIPE_KEYWORDS.slice(7).some(kw => text.includes(kw));
-  const hasNumberedSteps = /^\s*[\d]+[\.、\s]/m.test(text);
+  const hasNumberedSteps = /^\s*[\d]+[.、\s]/m.test(text);
   const hasBulletSteps = /^\s*[•·\-●○◆★]/m.test(text);
   const hasCookingVerb = COOKING_VERBS.some(verb => text.includes(verb));
   const hasChineseChars = /[\u4e00-\u9fa5]/.test(text);
@@ -116,7 +116,7 @@ function detectTools(text: string): ToolRequirement[] {
 }
 
 function countSteps(text: string): number {
-  const numberedSteps = text.match(/^\s*[\d]+[\.、\s]/gm) || [];
+  const numberedSteps = text.match(/^\s*[\d]+[.、\s]/gm) || [];
   const bulletSteps = text.match(/^\s*[•·\-●○◆★]/gm) || [];
   const explicitSteps = text.match(/(步骤|第[一二三四五六七八九十百千]+步|STEP|Step)\s*\d*/g) || [];
   
@@ -165,7 +165,7 @@ function determineStepComplexity(stepCount: number, techniques: SpecialTechnique
   return 'simple';
 }
 
-function calculateDifficulty(analysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor'>): {
+function calculateDifficulty(analysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor' | 'shouldSimplify' | 'simplifiedRecipe'>): {
   score: number;
   stars: 1 | 2 | 3 | 4 | 5;
   label: string;
@@ -274,7 +274,7 @@ export function analyzeRecipe(input: string): AnalysisResult {
   const { count: ingredientCount, complexity: ingredientComplexity } = estimateIngredientCount(text);
   const stepComplexity = determineStepComplexity(stepCount, specialTechniques);
   
-  const baseAnalysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor'> = {
+  const baseAnalysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor' | 'shouldSimplify' | 'simplifiedRecipe'> = {
     stepCount,
     stepComplexity,
     specialTechniques,
@@ -285,15 +285,26 @@ export function analyzeRecipe(input: string): AnalysisResult {
   
   const { score, stars, label } = calculateDifficulty(baseAnalysis);
   
+  const shouldSimplify = stars >= 4 || (stars === 3 && (
+    specialTechniques.filter(t => t.detected).length >= 2 ||
+    tools.filter(t => t.detected).length >= 4
+  ));
+
   const analysis: RecipeAnalysis = {
     ...baseAnalysis,
     difficultyScore: score,
     difficultyStars: stars,
     difficultyLabel: label,
     suitableFor: '',
+    shouldSimplify,
+    simplifiedRecipe: undefined,
   };
   
   analysis.suitableFor = generateSuitableFor(analysis);
+  
+  if (shouldSimplify) {
+    analysis.simplifiedRecipe = generateSimplifiedRecipe(text, analysis);
+  }
   
   return {
     success: true,
@@ -312,7 +323,7 @@ export function extractDomainFromUrl(url: string): string {
 
 export async function fetchRecipeFromUrl(url: string): Promise<{ success: boolean; content: string; error?: string }> {
   try {
-    const domain = extractDomainFromUrl(url);
+    extractDomainFromUrl(url);
     
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     
@@ -388,6 +399,251 @@ export async function fetchRecipeFromUrl(url: string): Promise<{ success: boolea
       content: '',
       error: '无法获取该链接内容。由于跨域限制，部分网站可能无法直接抓取，请尝试复制粘贴菜谱文字。'
     };
+  }
+}
+
+function extractRecipeName(text: string): string {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const firstLine = lines[0] || '';
+  const nameMatch = firstLine.match(/^[【[]?(菜名|名称|菜谱)?[】\]]?\s*([^【[]+)/);
+  if (nameMatch && nameMatch[2]) {
+    return nameMatch[2].trim().slice(0, 20);
+  }
+  const ingredientSection = text.match(/(食材|原料|材料)[\s\S]{0,200}/);
+  if (ingredientSection) {
+    const beforeIngredient = text.slice(0, ingredientSection.index || 0).trim();
+    const titleLine = beforeIngredient.split('\n').find(l => l.trim().length > 0 && l.trim().length < 20);
+    if (titleLine) return titleLine.trim();
+  }
+  return '家常菜谱';
+}
+
+function extractIngredients(text: string): string[] {
+  const ingredientSection = text.match(/(食材|原料|材料|配料|用料)[\s\S]{0,800}/i);
+  const targetText = ingredientSection ? ingredientSection[0] : text;
+  const lines = targetText.split(/[，,、;；\n]+/).map(s => s.trim()).filter(s => {
+    return s.length > 0 && s.length < 25 && /[\u4e00-\u9fa5]/.test(s) && 
+      !/食材|原料|材料|配料|用料|做法|步骤|方法|贴士|提示|调料|调味料/.test(s);
+  });
+  return lines.slice(0, 15);
+}
+
+function extractSteps(text: string): string[] {
+  const methodSection = text.match(/(做法|步骤|制法|制作方法|烹饪方法|操作步骤)[\s\S]{0,3000}/i);
+  const targetText = methodSection ? methodSection[0] : text;
+  const numberedSteps = targetText.match(/^\s*[\d]+[.、\s].+$/gm) || [];
+  if (numberedSteps.length > 0) {
+    return numberedSteps.map(s => s.replace(/^\s*[\d]+[.、\s]/, '').trim()).filter(s => s.length > 5);
+  }
+  const paragraphs = targetText.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 15 && p.length < 200);
+  return paragraphs.slice(0, 10);
+}
+
+const SIMPLIFICATION_STRATEGIES: Record<string, { name: string; description: string }> = {
+  riceCooker: { name: '电饭煲版', description: '改用电饭煲一键完成，减少火候控制' },
+  onePot: { name: '一锅炖', description: '所有食材一锅煮，减少分步操作' },
+  noMarinate: { name: '简化腌制', description: '跳过或简化腌制步骤，直接烹饪' },
+  simpleCut: { name: '简化刀工', description: '改为大块切配，减少精细处理' },
+  preMade: { name: '现成调料', description: '使用复合调味包代替调配酱汁' },
+  noFry: { name: '免油炸', description: '改用煎、煮、蒸等更简单的烹饪方式' },
+};
+
+function determineSimplificationStrategies(analysis: RecipeAnalysis): string[] {
+  const strategies: string[] = [];
+  const detectedTools = analysis.tools.filter(t => t.detected).map(t => t.name);
+  const detectedTechs = analysis.specialTechniques.filter(t => t.detected).map(t => t.name);
+
+  if (detectedTools.includes('炒锅') || detectedTechs.includes('颠勺') || analysis.stepCount > 5) {
+    strategies.push('riceCooker');
+  }
+  if (analysis.stepCount > 6) {
+    strategies.push('onePot');
+  }
+  if (detectedTechs.includes('挂糊') || detectedTechs.includes('焯水')) {
+    strategies.push('noMarinate');
+  }
+  if (detectedTechs.includes('雕花/摆盘')) {
+    strategies.push('simpleCut');
+  }
+  if (analysis.ingredientComplexity === 'complex' || analysis.ingredientCount > 10) {
+    strategies.push('preMade');
+  }
+  if (detectedTechs.includes('挂糊') || detectedTools.includes('炒锅')) {
+    strategies.push('noFry');
+  }
+
+  return strategies.length > 0 ? strategies : ['riceCooker', 'simpleCut'];
+}
+
+function generateSimplifiedName(originalName: string, strategies: string[]): string {
+  const strategyLabels = strategies.map(s => SIMPLIFICATION_STRATEGIES[s]?.name || '简化版');
+  const label = strategyLabels[0] || '简化版';
+  if (originalName.includes(label)) return originalName;
+  return `${label}${originalName}`;
+}
+
+function simplifyIngredients(ingredients: string[], strategies: string[]): string[] {
+  const skipKeywords = /(香料|卤水|高汤|吉利丁|明胶|琼脂|面包糠|酥皮|千层皮|酵母|泡打粉)/;
+  let simplified = ingredients.filter(ing => !skipKeywords.test(ing));
+  
+  if (strategies.includes('preMade')) {
+    const sauceIngredients = simplified.filter(ing => 
+      /(生抽|老抽|蚝油|料酒|香醋|白糖|冰糖|淀粉|鸡精|味精)/.test(ing)
+    );
+    if (sauceIngredients.length >= 3) {
+      simplified = simplified.filter(ing => 
+        !/(生抽|老抽|蚝油|料酒|香醋|白糖|冰糖|淀粉|鸡精|味精)/.test(ing)
+      );
+      simplified.push('现成调味包1袋');
+    }
+  }
+  
+  if (simplified.length > 8) {
+    const coreKeywords = /(肉|鸡|鱼|蛋|虾|牛|猪|羊|豆|菜|菇|面|米|饭|葱|姜|蒜|盐|油|酱油)/;
+    const core = simplified.filter(ing => coreKeywords.test(ing));
+    const others = simplified.filter(ing => !coreKeywords.test(ing));
+    simplified = [...core, ...others].slice(0, 8);
+  }
+  
+  return simplified.length > 0 ? simplified : ingredients.slice(0, 6);
+}
+
+function simplifySteps(steps: string[], strategies: string[], removedTechs: string[]): string[] {
+  let simplified = [...steps];
+  
+  const skipStepPatterns: RegExp[] = [];
+  if (removedTechs.includes('焯水')) {
+    skipStepPatterns.push(/焯水|汆烫|汆水|飞水|过凉水/);
+  }
+  if (removedTechs.includes('挂糊')) {
+    skipStepPatterns.push(/挂糊|上浆|裹粉|拍粉|拖蛋液/);
+  }
+  if (strategies.includes('noMarinate')) {
+    skipStepPatterns.push(/腌制|腌渍|静置|放.*分钟|冷藏/);
+  }
+  if (strategies.includes('simpleCut')) {
+    skipStepPatterns.push(/切花刀|雕花|摆盘|造型/);
+  }
+  
+  if (skipStepPatterns.length > 0) {
+    simplified = simplified.filter(step => 
+      !skipStepPatterns.some(pattern => pattern.test(step))
+    );
+  }
+  
+  if (strategies.includes('riceCooker') && simplified.length > 0) {
+    simplified = [
+      '将所有食材洗净切大块备用',
+      `将食材全部放入电饭煲内胆，加入适量清水和调味料`,
+      '按下电饭煲煮饭键或煲汤键，等待自动完成',
+      '开盖拌匀，盛入碗中即可享用'
+    ];
+  } else if (strategies.includes('onePot') && simplified.length > 3) {
+    simplified = [
+      '所有食材洗净处理好备用',
+      '锅中加少许油，放入主料翻炒至变色',
+      '加入其余食材和适量清水，大火煮开',
+      '转小火炖煮15-20分钟，开盖调味即可'
+    ];
+  } else if (simplified.length > 5) {
+    const merged: string[] = [];
+    for (let i = 0; i < simplified.length; i += 2) {
+      if (i + 1 < simplified.length) {
+        merged.push(`${simplified[i].replace(/。$/, '')}，同时${simplified[i + 1]}`);
+      } else {
+        merged.push(simplified[i]);
+      }
+    }
+    simplified = merged;
+  }
+  
+  return simplified.slice(0, 6);
+}
+
+function generateFlavorPreservation(originalName: string, strategies: string[]): string {
+  const reasons: string[] = [];
+  if (strategies.includes('riceCooker')) {
+    reasons.push('电饭煲焖煮保留食材原汁');
+  }
+  if (strategies.includes('onePot')) {
+    reasons.push('一锅炖煮让味道充分融合');
+  }
+  if (strategies.includes('noFry')) {
+    reasons.push('改用健康烹饪方式，保留核心风味');
+  }
+  if (strategies.includes('preMade')) {
+    reasons.push('使用秘制调味包，还原餐厅味道');
+  }
+  if (reasons.length === 0) {
+    reasons.push('保留主要调味比例，风味接近原版');
+  }
+  return `${originalName}的简化版本，${reasons.join('，')}，在家轻松复刻经典味道。`;
+}
+
+export function generateSimplifiedRecipe(
+  originalText: string,
+  analysis: RecipeAnalysis
+): SimplifiedRecipe {
+  const originalName = extractRecipeName(originalText);
+  const ingredients = extractIngredients(originalText);
+  const steps = extractSteps(originalText);
+  const strategies = determineSimplificationStrategies(analysis);
+  const removedTools = analysis.tools.filter(t => t.detected).map(t => t.name).slice(0, 3);
+  const removedTechniques = analysis.specialTechniques.filter(t => t.detected).map(t => t.name);
+  
+  const simplifiedIngredients = simplifyIngredients(ingredients, strategies);
+  const simplifiedSteps = simplifySteps(steps, strategies, removedTechniques);
+  
+  const simplificationDescs = strategies.map(s => {
+    const strategy = SIMPLIFICATION_STRATEGIES[s];
+    return strategy ? `采用「${strategy.name}」策略：${strategy.description}` : '简化操作';
+  });
+  
+  if (removedTools.length > 0) {
+    simplificationDescs.push(`无需使用${removedTools.join('、')}等工具，普通厨具即可完成`);
+  }
+  if (removedTechniques.length > 0) {
+    simplificationDescs.push(`跳过${removedTechniques.slice(0, 3).join('、')}等专业技巧`);
+  }
+  
+  return {
+    id: `simplified-${Date.now()}`,
+    originalName,
+    simplifiedName: generateSimplifiedName(originalName, strategies),
+    simplifiedIngredients,
+    simplifiedSteps,
+    simplifications: simplificationDescs,
+    removedTools,
+    removedTechniques,
+    flavorPreservation: generateFlavorPreservation(originalName, strategies),
+    generatedAt: Date.now(),
+  };
+}
+
+const RATING_STORAGE_KEY = 'simplified_recipe_ratings';
+
+export function saveSimplificationRating(recipeId: string, rating: number, comment?: string): void {
+  try {
+    const existing = localStorage.getItem(RATING_STORAGE_KEY);
+    const ratings = existing ? JSON.parse(existing) : [];
+    ratings.push({
+      recipeId,
+      rating,
+      comment,
+      createdAt: Date.now(),
+    });
+    localStorage.setItem(RATING_STORAGE_KEY, JSON.stringify(ratings));
+  } catch (e) {
+    console.error('Failed to save rating:', e);
+  }
+}
+
+export function getSimplificationRatings(): { recipeId: string; rating: number; comment?: string; createdAt: number }[] {
+  try {
+    const existing = localStorage.getItem(RATING_STORAGE_KEY);
+    return existing ? JSON.parse(existing) : [];
+  } catch {
+    return [];
   }
 }
 

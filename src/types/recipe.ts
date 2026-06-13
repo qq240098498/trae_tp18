@@ -9,6 +9,26 @@ export interface ToolRequirement {
   detected: boolean;
 }
 
+export interface SimplifiedRecipe {
+  id: string;
+  originalName: string;
+  simplifiedName: string;
+  simplifiedIngredients: string[];
+  simplifiedSteps: string[];
+  simplifications: string[];
+  removedTools: string[];
+  removedTechniques: string[];
+  flavorPreservation: string;
+  generatedAt: number;
+}
+
+export interface SimplificationRating {
+  recipeId: string;
+  rating: number;
+  comment?: string;
+  createdAt: number;
+}
+
 export interface RecipeAnalysis {
   stepCount: number;
   stepComplexity: 'simple' | 'moderate' | 'complex';
@@ -20,6 +40,8 @@ export interface RecipeAnalysis {
   difficultyStars: 1 | 2 | 3 | 4 | 5;
   difficultyLabel: string;
   suitableFor: string;
+  shouldSimplify: boolean;
+  simplifiedRecipe?: SimplifiedRecipe;
 }
 
 export type InputMode = 'text' | 'url';

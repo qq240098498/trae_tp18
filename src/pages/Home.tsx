@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { RecipeAnalysis, InputMode, RecipeValidationResult } from '@/types/recipe';
-import { analyzeRecipe, fetchRecipeFromUrl, SAMPLE_RECIPES, validateRecipeContent } from '@/lib/recipeAnalyzer';
+import type { RecipeAnalysis, InputMode, RecipeValidationResult, SimplifiedRecipe } from '@/types/recipe';
+import { analyzeRecipe, fetchRecipeFromUrl, SAMPLE_RECIPES, generateSimplifiedRecipe } from '@/lib/recipeAnalyzer';
 import AnalysisCard from '@/components/AnalysisCard';
 import {
   ChefHat,
@@ -23,6 +23,7 @@ export default function Home() {
   const [validationError, setValidationError] = useState<{ message: string; validation: RecipeValidationResult } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentRecipeText, setCurrentRecipeText] = useState('');
 
   const handleAnalyze = async () => {
     setIsLoading(true);
@@ -61,6 +62,7 @@ export default function Home() {
       
       if (result.success) {
         setAnalysis(result.data);
+        setCurrentRecipeText(content);
       } else {
         setValidationError({
           message: (result as { success: false; error: string; validation: RecipeValidationResult }).error,
@@ -254,7 +256,12 @@ export default function Home() {
           <div className="lg:col-span-2">
             <div className="sticky top-8">
               {analysis ? (
-                <AnalysisCard analysis={analysis} />
+                <AnalysisCard
+                  analysis={analysis}
+                  onGenerateSimplified={(a: RecipeAnalysis): SimplifiedRecipe => {
+                    return generateSimplifiedRecipe(currentRecipeText, a);
+                  }}
+                />
               ) : validationError ? (
                 <div className="bg-white rounded-2xl shadow-lg border border-red-200 overflow-hidden">
                   <div className="bg-gradient-to-r from-red-500 to-rose-500 p-6 text-white">
