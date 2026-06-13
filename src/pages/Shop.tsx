@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { RECIPE_COMBOS, INGREDIENTS, getIngredientById, generateComboFromRecipe } from '@/data/shopData';
 import { useCartStore } from '@/store/cartStore';
@@ -19,6 +19,9 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  AlertTriangle,
+  PackageX,
+  Flame,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -49,11 +52,26 @@ export default function Shop() {
   const [selectedCombo, setSelectedCombo] = useState<RecipeCombo | null>(null);
   const [showCart, setShowCart] = useState(false);
   const [addedToast, setAddedToast] = useState<string | null>(null);
+  const [stockErrorToast, setStockErrorToast] = useState<string | null>(null);
 
   const addCombo = useCartStore((s) => s.addCombo);
   const addItem = useCartStore((s) => s.addItem);
   const getTotalCount = useCartStore((s) => s.getTotalCount);
+  const stockError = useCartStore((s) => s.stockError);
+  const stockVersion = useCartStore((s) => s.stockVersion);
+  const clearStockError = useCartStore((s) => s.clearStockError);
+  const checkComboStock = useCartStore((s) => s.checkComboStock);
   const cartCount = getTotalCount();
+
+  useEffect(() => {
+    if (stockError) {
+      setStockErrorToast(`「${stockError.itemName}」库存不足，仅剩 ${stockError.available} 份`);
+      setTimeout(() => {
+        setStockErrorToast(null);
+        clearStockError();
+      }, 3000);
+    }
+  }, [stockError, clearStockError]);
 
   const aiCombo = useMemo(() => {
     if (state?.fromAnalysis && state?.recipeName) {
@@ -87,7 +105,7 @@ export default function Shop() {
     }
 
     return combos;
-  }, [activeCuisine, searchQuery, aiCombo]);
+  }, [activeCuisine, searchQuery, aiCombo, stockVersion]);
 
   const showAddedToast = (name: string) => {
     setAddedToast(name);
@@ -95,8 +113,42 @@ export default function Shop() {
   };
 
   const handleAddComboToCart = (combo: RecipeCombo) => {
-    addCombo(combo.ingredients);
-    showAddedToast(combo.name);
+    const result = addCombo(combo.ingredients);
+    if (result.success) {
+      showAddedToast(combo.name);
+    } else {
+      const errorMsgs = result.errors.map((e) => `「${e.itemName}」仅剩${e.available}份`).join('、');
+      setStockErrorToast(`库存不足：${errorMsgs}`);
+      setTimeout(() => setStockErrorToast(null), 3000);
+    }
+  };
+
+  const getComboStockStatus = (combo: RecipeCombo) => {
+    const { available, errors } = checkComboStock(combo.ingredients);
+    if (!available) {
+      const outOfStock = errors.some((e) => e.available === 0);
+      return {
+        available: false,
+        status: outOfStock ? 'out-of-stock' : 'out-of-stock',
+        message: outOfStock ? '部分食材已售罄' : errors.map((e) => `「${e.itemName}」仅剩${e.available}份`).join('、'),
+      };
+    }
+    const maxServings = combo.ingredients.reduce((min, ing) => {
+      const item = getIngredientById(ing.itemId);
+      if (!item) return min;
+      const getCartQuantity = useCartStore.getState().getCartQuantity;
+      const inCart = getCartQuantity(ing.itemId);
+      const remaining = Math.floor((item.stock - inCart) / ing.quantity);
+      return Math.min(min, remaining);
+    }, Infinity);
+
+    if (maxServings <= 0) {
+      return { available: false, status: 'out-of-stock', message: '已达可购上限' };
+    }
+    if (maxServings <= 5) {
+      return { available: true, status: 'low-stock', message: `仅剩 ${maxServings} 份` };
+    }
+    return { available: true, status: 'in-stock', message: '库存充足' };
   };
 
   return (
@@ -177,6 +229,7 @@ export default function Shop() {
               isAiRecommended
               onViewDetail={() => setSelectedCombo(aiCombo)}
               onAddToCart={() => handleAddComboToCart(aiCombo)}
+              stockStatus={getComboStockStatus(aiCombo)}
             />
           </div>
         )}
@@ -224,6 +277,7 @@ export default function Shop() {
                 combo={combo}
                 onViewDetail={() => setSelectedCombo(combo)}
                 onAddToCart={() => handleAddComboToCart(combo)}
+                stockStatus={getComboStockStatus(combo)}
               />
             ))}
           </div>
@@ -260,6 +314,15 @@ export default function Shop() {
           </div>
         </div>
       )}
+
+      {stockErrorToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <div className="bg-red-500 text-white px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-sm font-medium">{stockErrorToast}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -269,23 +332,37 @@ function ComboCard({
   isAiRecommended = false,
   onViewDetail,
   onAddToCart,
+  stockStatus,
 }: {
   combo: RecipeCombo;
   isAiRecommended?: boolean;
   onViewDetail: () => void;
   onAddToCart: () => void;
+  stockStatus: { available: boolean; status: string; message: string };
 }) {
+  const isOutOfStock = stockStatus.status === 'out-of-stock';
+  const isLowStock = stockStatus.status === 'low-stock';
+
   return (
     <div
       className={cn(
-        'bg-white rounded-2xl shadow-sm border overflow-hidden transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer group',
-        isAiRecommended ? 'border-amber-300 ring-2 ring-amber-200/50' : 'border-gray-100'
+        'bg-white rounded-2xl shadow-sm border overflow-hidden transition-all hover:shadow-xl hover:-translate-y-1 cursor-pointer group relative',
+        isAiRecommended ? 'border-amber-300 ring-2 ring-amber-200/50' : 'border-gray-100',
+        isOutOfStock && 'opacity-60 grayscale cursor-not-allowed'
       )}
-      onClick={onViewDetail}
+      onClick={!isOutOfStock ? onViewDetail : undefined}
     >
+      {isOutOfStock && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
+          <div className="bg-gray-900 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+            <PackageX className="w-4 h-4" />
+            <span className="font-medium text-sm">已售罄</span>
+          </div>
+        </div>
+      )}
       <div className="relative h-32 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <span className="text-6xl transition-transform group-hover:scale-110">{combo.image}</span>
-        <div className="absolute top-3 left-3">
+        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
           <span
             className={cn(
               'px-2.5 py-1 rounded-full text-xs font-medium',
@@ -296,6 +373,12 @@ function ComboCard({
           >
             {isAiRecommended ? '✨ AI推荐' : combo.cuisine}
           </span>
+          {isLowStock && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500 text-white flex items-center gap-1 animate-pulse">
+              <Flame className="w-3 h-3" />
+              {stockStatus.message}
+            </span>
+          )}
         </div>
         <div className="absolute top-3 right-3 bg-white/90 backdrop-blur rounded-full px-2 py-1 flex items-center gap-1 shadow-sm">
           <Tag className="w-3 h-3 text-red-500" />
@@ -334,9 +417,15 @@ function ComboCard({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onAddToCart();
+              if (!isOutOfStock) onAddToCart();
             }}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/30 hover:shadow-lg hover:scale-105 transition-all"
+            disabled={isOutOfStock}
+            className={cn(
+              'w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all',
+              isOutOfStock
+                ? 'bg-gray-300 cursor-not-allowed'
+                : 'bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-emerald-500/30 hover:shadow-lg hover:scale-105'
+            )}
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -359,6 +448,17 @@ function ComboDetailModal({
 }) {
   const discount = Math.round((1 - combo.totalPrice / combo.originalPrice) * 100);
   const saved = (combo.originalPrice - combo.totalPrice).toFixed(1);
+  const checkComboStock = useCartStore((s) => s.checkComboStock);
+  const getAvailableStock = useCartStore((s) => s.getAvailableStock);
+
+  const { available: comboAvailable, errors } = checkComboStock(combo.ingredients);
+
+  const getItemStockStatus = (itemId: string) => {
+    const stock = getAvailableStock(itemId);
+    if (stock === 0) return { status: 'out-of-stock', label: '已售罄', color: 'text-red-500 bg-red-50' };
+    if (stock <= 5) return { status: 'low-stock', label: `仅剩${stock}份`, color: 'text-orange-500 bg-orange-50' };
+    return { status: 'in-stock', label: '库存充足', color: 'text-green-500 bg-green-50' };
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -420,21 +520,42 @@ function ComboDetailModal({
                 套餐立省 {discount}%
               </span>
             </h3>
+            {!comboAvailable && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-red-800">部分食材库存不足</div>
+                  <div className="text-xs text-red-600 mt-0.5">
+                    {errors.map((e) => `「${e.itemName}」仅剩${e.available}份`).join('、')}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               {combo.ingredients.map((ing, idx) => {
                 const item = getIngredientById(ing.itemId);
                 if (!item) return null;
                 const itemTotal = item.price * ing.quantity;
+                const stockStatus = getItemStockStatus(ing.itemId);
+                const isOutOfStock = stockStatus.status === 'out-of-stock';
                 return (
                   <div
                     key={idx}
-                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl transition-colors',
+                      isOutOfStock ? 'bg-red-50 opacity-60' : 'bg-gray-50 hover:bg-gray-100'
+                    )}
                   >
                     <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm">
                       {item.image}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-800">{item.name}</div>
+                      <div className="font-medium text-gray-800 flex items-center gap-2">
+                        {item.name}
+                        <span className={cn('text-xs px-2 py-0.5 rounded-full', stockStatus.color)}>
+                          {stockStatus.label}
+                        </span>
+                      </div>
                       <div className="text-xs text-gray-500">
                         {item.unit} × {ing.quantity}
                       </div>
@@ -443,7 +564,13 @@ function ComboDetailModal({
                       <div className="font-semibold text-gray-800">¥{itemTotal.toFixed(1)}</div>
                       <button
                         onClick={() => onAddSingleItem(ing.itemId, 1)}
-                        className="mt-1 text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-0.5 ml-auto"
+                        disabled={isOutOfStock}
+                        className={cn(
+                          'mt-1 text-xs flex items-center gap-0.5 ml-auto',
+                          isOutOfStock
+                            ? 'text-gray-400 cursor-not-allowed'
+                            : 'text-emerald-600 hover:text-emerald-700'
+                        )}
                       >
                         <Plus className="w-3 h-3" />
                         单独加购
@@ -476,10 +603,16 @@ function ComboDetailModal({
         <div className="p-4 border-t border-gray-100 bg-white">
           <button
             onClick={onAddToCart}
-            className="w-full py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-2"
+            disabled={!comboAvailable}
+            className={cn(
+              'w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all',
+              comboAvailable
+                ? 'text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/30'
+                : 'text-gray-400 bg-gray-200 cursor-not-allowed'
+            )}
           >
             <ShoppingCart className="w-5 h-5" />
-            一键加入套餐 · ¥{combo.totalPrice}
+            {comboAvailable ? `一键加入套餐 · ¥${combo.totalPrice}` : '部分食材已售罄'}
           </button>
         </div>
       </div>

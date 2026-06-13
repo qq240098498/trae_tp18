@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useCartStore } from '@/store/cartStore';
 import { getIngredientById } from '@/data/shopData';
 import {
@@ -12,6 +12,8 @@ import {
   CreditCard,
   CheckCircle2,
   ArrowRight,
+  AlertTriangle,
+  PackageX,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,30 +23,88 @@ interface CartDrawerProps {
 
 export default function CartDrawer({ onClose }: CartDrawerProps) {
   const items = useCartStore((s) => s.items);
+  const stockVersion = useCartStore((s) => s.stockVersion);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
   const clearCart = useCartStore((s) => s.clearCart);
   const getTotalPrice = useCartStore((s) => s.getTotalPrice);
+  const getAvailableStock = useCartStore((s) => s.getAvailableStock);
+  const stockError = useCartStore((s) => s.stockError);
+  const clearStockError = useCartStore((s) => s.clearStockError);
+  const checkout = useCartStore((s) => s.checkout);
 
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [phone, setPhone] = useState('');
+  const [localStockError, setLocalStockError] = useState<string | null>(null);
 
   const totalPrice = getTotalPrice();
   const deliveryFee = totalPrice >= 99 ? 0 : 8;
   const finalPrice = items.length > 0 ? totalPrice + deliveryFee : 0;
 
+  const stockCheckResult = useMemo(() => {
+    let hasStockError = false;
+    let hasLowStock = false;
+    const errorItems: string[] = [];
+
+    items.forEach((cartItem) => {
+      const stock = getAvailableStock(cartItem.itemId);
+      if (stock === 0) {
+        hasStockError = true;
+        const item = getIngredientById(cartItem.itemId);
+        if (item) errorItems.push(`「${item.name}」已售罄`);
+      } else if (cartItem.quantity > stock) {
+        hasStockError = true;
+        const item = getIngredientById(cartItem.itemId);
+        if (item) errorItems.push(`「${item.name}」仅剩${stock}份`);
+      } else if (stock <= 5) {
+        hasLowStock = true;
+      }
+    });
+
+    return { hasStockError, hasLowStock, errorItems };
+  }, [items, getAvailableStock, stockVersion]);
+
+  const handleUpdateQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      removeItem(itemId);
+      return;
+    }
+    const stock = getAvailableStock(itemId);
+    if (newQuantity > stock) {
+      const item = getIngredientById(itemId);
+      setLocalStockError(`「${item?.name}」库存不足，仅剩${stock}份`);
+      setTimeout(() => setLocalStockError(null), 3000);
+      return;
+    }
+    const success = updateQuantity(itemId, newQuantity);
+    if (!success) {
+      setTimeout(() => clearStockError(), 3000);
+    }
+  };
+
   const handleCheckout = () => {
     if (!deliveryAddress.trim() || !phone.trim()) return;
+    if (stockCheckResult.hasStockError) {
+      setLocalStockError(`库存不足：${stockCheckResult.errorItems.join('、')}，请调整后再结算`);
+      setTimeout(() => setLocalStockError(null), 4000);
+      return;
+    }
     setIsCheckingOut(true);
     setTimeout(() => {
+      const result = checkout();
       setIsCheckingOut(false);
-      setOrderSuccess(true);
-      setTimeout(() => {
-        clearCart();
-        onClose();
-      }, 2500);
+      if (result.success) {
+        setOrderSuccess(true);
+        setTimeout(() => {
+          onClose();
+        }, 2500);
+      } else {
+        const errorMsgs = result.errors.map((e) => `「${e.itemName}」仅剩${e.available}份`).join('、');
+        setLocalStockError(`库存不足：${errorMsgs}，请调整后再结算`);
+        setTimeout(() => setLocalStockError(null), 4000);
+      }
     }, 1500);
   };
 
@@ -110,22 +170,65 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
           </div>
         ) : (
           <>
+            {(localStockError || stockError) && (
+              <div className="mx-5 mt-5 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-red-800">{localStockError || `「${stockError?.itemName}」库存不足，仅剩${stockError?.available}份`}</div>
+                </div>
+              </div>
+            )}
+
+            {stockCheckResult.hasLowStock && !stockCheckResult.hasStockError && (
+              <div className="mx-5 mt-5 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-amber-800">部分商品库存紧张</div>
+                  <div className="text-xs text-amber-600 mt-0.5">建议尽快下单，避免售罄</div>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
               {items.map((cartItem) => {
                 const ingredient = getIngredientById(cartItem.itemId);
                 if (!ingredient) return null;
                 const subtotal = ingredient.price * cartItem.quantity;
+                const stock = getAvailableStock(cartItem.itemId);
+                const isOutOfStock = stock === 0;
+                const isLowStock = stock <= 5 && stock > 0;
+                const isOverStock = cartItem.quantity > stock;
+
                 return (
                   <div
                     key={cartItem.itemId}
-                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl transition-colors',
+                      isOutOfStock || isOverStock ? 'bg-red-50 border border-red-200' : 'bg-gray-50 hover:bg-gray-100'
+                    )}
                   >
-                    <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-3xl shadow-sm">
-                      {ingredient.image}
+                    <div className="relative">
+                      <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center text-3xl shadow-sm">
+                        {ingredient.image}
+                      </div>
+                      {isOutOfStock && (
+                        <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                          <PackageX className="w-3 h-3 text-white" />
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-800 truncate">
+                      <div className="font-medium text-gray-800 truncate flex items-center gap-2">
                         {ingredient.name}
+                        {isOutOfStock && (
+                          <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">已售罄</span>
+                        )}
+                        {isLowStock && !isOutOfStock && (
+                          <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full">仅剩{stock}份</span>
+                        )}
+                        {isOverStock && (
+                          <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">超库存{cartItem.quantity - stock}份</span>
+                        )}
                       </div>
                       <div className="text-xs text-gray-500">
                         {ingredient.unit} · ¥{ingredient.price}
@@ -143,7 +246,7 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                       </button>
                       <div className="flex items-center gap-1 bg-white rounded-lg p-1 shadow-sm border border-gray-100">
                         <button
-                          onClick={() => updateQuantity(cartItem.itemId, cartItem.quantity - 1)}
+                          onClick={() => handleUpdateQuantity(cartItem.itemId, cartItem.quantity - 1)}
                           className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-all"
                         >
                           <Minus className="w-3.5 h-3.5" />
@@ -152,8 +255,14 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                           {cartItem.quantity}
                         </span>
                         <button
-                          onClick={() => updateQuantity(cartItem.itemId, cartItem.quantity + 1)}
-                          className="w-7 h-7 rounded-md hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-all"
+                          onClick={() => handleUpdateQuantity(cartItem.itemId, cartItem.quantity + 1)}
+                          disabled={isOutOfStock || cartItem.quantity >= stock}
+                          className={cn(
+                            'w-7 h-7 rounded-md flex items-center justify-center transition-all',
+                            isOutOfStock || cartItem.quantity >= stock
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          )}
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
@@ -249,16 +358,16 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                     </button>
                     <button
                       onClick={handleCheckout}
-                      disabled={!deliveryAddress.trim() || !phone.trim()}
+                      disabled={!deliveryAddress.trim() || !phone.trim() || stockCheckResult.hasStockError}
                       className={cn(
                         'flex-1 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2',
-                        deliveryAddress.trim() && phone.trim()
+                        deliveryAddress.trim() && phone.trim() && !stockCheckResult.hasStockError
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/30'
                           : 'bg-gray-300 cursor-not-allowed'
                       )}
                     >
-                      立即结算
-                      <ArrowRight className="w-4 h-4" />
+                      {stockCheckResult.hasStockError ? '部分商品库存不足' : '立即结算'}
+                      {!stockCheckResult.hasStockError && <ArrowRight className="w-4 h-4" />}
                     </button>
                   </div>
 

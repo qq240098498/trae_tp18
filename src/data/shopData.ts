@@ -1,27 +1,31 @@
 import type { IngredientItem, RecipeCombo } from '@/types/shop';
 
-export const INGREDIENTS: IngredientItem[] = [
-  { id: 'tomato', name: '番茄', price: 6.8, unit: '500g', image: '🍅', category: '蔬菜', description: '新鲜自然熟番茄，酸甜可口' },
-  { id: 'egg', name: '鸡蛋', price: 12.9, unit: '10枚', image: '🥚', category: '蛋类', description: '农家土鸡蛋，营养丰富' },
-  { id: 'chicken-breast', name: '鸡胸肉', price: 18.8, unit: '500g', image: '🍗', category: '肉类', description: '新鲜鸡胸肉，低脂高蛋白' },
-  { id: 'beef', name: '牛肉', price: 58.0, unit: '500g', image: '🥩', category: '肉类', description: '精选牛里脊，鲜嫩多汁' },
-  { id: 'pork', name: '五花肉', price: 32.0, unit: '500g', image: '🥓', category: '肉类', description: '三层五花肉，肥瘦相间' },
-  { id: 'tofu', name: '豆腐', price: 4.5, unit: '一盒', image: '🧈', category: '豆制品', description: '嫩豆腐，滑嫩细腻' },
-  { id: 'potato', name: '土豆', price: 5.8, unit: '500g', image: '🥔', category: '蔬菜', description: '黄心土豆，粉糯香甜' },
-  { id: 'carrot', name: '胡萝卜', price: 4.2, unit: '500g', image: '🥕', category: '蔬菜', description: '新鲜胡萝卜，脆甜多汁' },
-  { id: 'cucumber', name: '黄瓜', price: 5.5, unit: '500g', image: '🥒', category: '蔬菜', description: '顶花带刺黄瓜，清脆爽口' },
-  { id: 'mushroom', name: '香菇', price: 12.0, unit: '250g', image: '🍄', category: '菌菇', description: '新鲜香菇，肉质肥厚' },
-  { id: 'fish', name: '鲈鱼', price: 38.0, unit: '一条', image: '🐟', category: '水产', description: '鲜活鲈鱼，肉质细嫩' },
-  { id: 'shrimp', name: '鲜虾', price: 48.0, unit: '500g', image: '🦐', category: '水产', description: '活冻大虾，鲜甜弹牙' },
-  { id: 'green-onion', name: '葱', price: 3.5, unit: '一把', image: '🧅', category: '调味', description: '新鲜小葱，香气浓郁' },
-  { id: 'garlic', name: '大蒜', price: 8.0, unit: '500g', image: '🧄', category: '调味', description: '新鲜大蒜，辛香浓郁' },
-  { id: 'ginger', name: '生姜', price: 9.0, unit: '500g', image: '🫚', category: '调味', description: '老姜，姜味浓郁' },
-  { id: 'rice', name: '大米', price: 28.0, unit: '2kg', image: '🍚', category: '主食', description: '东北大米，香糯可口' },
-  { id: 'noodle', name: '面条', price: 8.0, unit: '500g', image: '🍜', category: '主食', description: '手工挂面，劲道爽滑' },
-  { id: 'spinach', name: '菠菜', price: 6.0, unit: '500g', image: '🥬', category: '蔬菜', description: '新鲜菠菜，翠绿鲜嫩' },
-  { id: 'cabbage', name: '白菜', price: 3.8, unit: '一颗', image: '🥗', category: '蔬菜', description: '大白菜，清甜爽口' },
-  { id: 'pepper', name: '青椒', price: 7.0, unit: '500g', image: '🫑', category: '蔬菜', description: '新鲜青椒，微辣脆嫩' },
+const INITIAL_INGREDIENTS: IngredientItem[] = [
+  { id: 'tomato', name: '番茄', price: 6.8, unit: '500g', image: '🍅', category: '蔬菜', description: '新鲜自然熟番茄，酸甜可口', stock: 50 },
+  { id: 'egg', name: '鸡蛋', price: 12.9, unit: '10枚', image: '🥚', category: '蛋类', description: '农家土鸡蛋，营养丰富', stock: 100 },
+  { id: 'chicken-breast', name: '鸡胸肉', price: 18.8, unit: '500g', image: '🍗', category: '肉类', description: '新鲜鸡胸肉，低脂高蛋白', stock: 30 },
+  { id: 'beef', name: '牛肉', price: 58.0, unit: '500g', image: '🥩', category: '肉类', description: '精选牛里脊，鲜嫩多汁', stock: 15 },
+  { id: 'pork', name: '五花肉', price: 32.0, unit: '500g', image: '🥓', category: '肉类', description: '三层五花肉，肥瘦相间', stock: 25 },
+  { id: 'tofu', name: '豆腐', price: 4.5, unit: '一盒', image: '🧈', category: '豆制品', description: '嫩豆腐，滑嫩细腻', stock: 40 },
+  { id: 'potato', name: '土豆', price: 5.8, unit: '500g', image: '🥔', category: '蔬菜', description: '黄心土豆，粉糯香甜', stock: 60 },
+  { id: 'carrot', name: '胡萝卜', price: 4.2, unit: '500g', image: '🥕', category: '蔬菜', description: '新鲜胡萝卜，脆甜多汁', stock: 45 },
+  { id: 'cucumber', name: '黄瓜', price: 5.5, unit: '500g', image: '🥒', category: '蔬菜', description: '顶花带刺黄瓜，清脆爽口', stock: 5 },
+  { id: 'mushroom', name: '香菇', price: 12.0, unit: '250g', image: '🍄', category: '菌菇', description: '新鲜香菇，肉质肥厚', stock: 20 },
+  { id: 'fish', name: '鲈鱼', price: 38.0, unit: '一条', image: '🐟', category: '水产', description: '鲜活鲈鱼，肉质细嫩', stock: 8 },
+  { id: 'shrimp', name: '鲜虾', price: 48.0, unit: '500g', image: '🦐', category: '水产', description: '活冻大虾，鲜甜弹牙', stock: 12 },
+  { id: 'green-onion', name: '葱', price: 3.5, unit: '一把', image: '🧅', category: '调味', description: '新鲜小葱，香气浓郁', stock: 80 },
+  { id: 'garlic', name: '大蒜', price: 8.0, unit: '500g', image: '🧄', category: '调味', description: '新鲜大蒜，辛香浓郁', stock: 70 },
+  { id: 'ginger', name: '生姜', price: 9.0, unit: '500g', image: '🫚', category: '调味', description: '老姜，姜味浓郁', stock: 65 },
+  { id: 'rice', name: '大米', price: 28.0, unit: '2kg', image: '🍚', category: '主食', description: '东北大米，香糯可口', stock: 0 },
+  { id: 'noodle', name: '面条', price: 8.0, unit: '500g', image: '🍜', category: '主食', description: '手工挂面，劲道爽滑', stock: 35 },
+  { id: 'spinach', name: '菠菜', price: 6.0, unit: '500g', image: '🥬', category: '蔬菜', description: '新鲜菠菜，翠绿鲜嫩', stock: 3 },
+  { id: 'cabbage', name: '白菜', price: 3.8, unit: '一颗', image: '🥗', category: '蔬菜', description: '大白菜，清甜爽口', stock: 40 },
+  { id: 'pepper', name: '青椒', price: 7.0, unit: '500g', image: '🫑', category: '蔬菜', description: '新鲜青椒，微辣脆嫩', stock: 28 },
 ];
+
+let _ingredients: IngredientItem[] = INITIAL_INGREDIENTS.map(i => ({ ...i }));
+
+export const INGREDIENTS: IngredientItem[] = _ingredients;
 
 export const RECIPE_COMBOS: RecipeCombo[] = [
   {
@@ -264,22 +268,78 @@ export const RECIPE_COMBOS: RecipeCombo[] = [
   },
 ];
 
+let _stockUpdateListeners: (() => void)[] = [];
+
+export function subscribeStockUpdate(callback: () => void) {
+  _stockUpdateListeners.push(callback);
+  return () => {
+    _stockUpdateListeners = _stockUpdateListeners.filter((l) => l !== callback);
+  };
+}
+
+function _notifyStockUpdate() {
+  _stockUpdateListeners.forEach((cb) => cb());
+}
+
 export function getIngredientById(id: string): IngredientItem | undefined {
-  return INGREDIENTS.find(item => item.id === id);
+  return _ingredients.find((item) => item.id === id);
+}
+
+export function getAvailableStock(itemId: string): number {
+  const item = getIngredientById(itemId);
+  return item?.stock ?? 0;
+}
+
+export function deductStock(itemId: string, quantity: number): boolean {
+  const item = _ingredients.find((i) => i.id === itemId);
+  if (!item) return false;
+  if (item.stock < quantity) return false;
+  item.stock -= quantity;
+  _notifyStockUpdate();
+  return true;
+}
+
+export function restoreStock(itemId: string, quantity: number): boolean {
+  const item = _ingredients.find((i) => i.id === itemId);
+  if (!item) return false;
+  const initialItem = INITIAL_INGREDIENTS.find((i) => i.id === itemId);
+  const maxStock = initialItem?.stock ?? item.stock + quantity;
+  item.stock = Math.min(maxStock, item.stock + quantity);
+  _notifyStockUpdate();
+  return true;
+}
+
+export function deductComboStock(ingredients: { itemId: string; quantity: number }[]): boolean {
+  for (const ing of ingredients) {
+    const item = getIngredientById(ing.itemId);
+    if (!item || item.stock < ing.quantity) {
+      return false;
+    }
+  }
+  for (const ing of ingredients) {
+    deductStock(ing.itemId, ing.quantity);
+  }
+  return true;
+}
+
+export function restoreComboStock(ingredients: { itemId: string; quantity: number }[]): void {
+  for (const ing of ingredients) {
+    restoreStock(ing.itemId, ing.quantity);
+  }
 }
 
 export function getCombosByCuisine(cuisine: string): RecipeCombo[] {
   if (cuisine === 'all') return RECIPE_COMBOS;
-  return RECIPE_COMBOS.filter(combo => combo.cuisine === cuisine);
+  return RECIPE_COMBOS.filter((combo) => combo.cuisine === cuisine);
 }
 
 export function generateComboFromRecipe(recipeName: string, ingredients: string[]): RecipeCombo {
-  const matchedItems = ingredients.map(ing => {
-    const matched = INGREDIENTS.find(i => 
-      ing.includes(i.name) || i.name.includes(ing)
-    );
-    return matched ? { itemId: matched.id, quantity: 1 } : null;
-  }).filter(Boolean) as { itemId: string; quantity: number }[];
+  const matchedItems = ingredients
+    .map((ing) => {
+      const matched = _ingredients.find((i) => ing.includes(i.name) || i.name.includes(ing));
+      return matched ? { itemId: matched.id, quantity: 1 } : null;
+    })
+    .filter(Boolean) as { itemId: string; quantity: number }[];
 
   const totalPrice = matchedItems.reduce((sum, item) => {
     const ingredient = getIngredientById(item.itemId);

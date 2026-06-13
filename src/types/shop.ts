@@ -6,6 +6,7 @@ export interface IngredientItem {
   image: string;
   category: string;
   description: string;
+  stock: number;
 }
 
 export interface RecipeCombo {
