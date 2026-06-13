@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { RecipeAnalysis, InputMode, RecipeValidationResult, SimplifiedRecipe } from '@/types/recipe';
 import { analyzeRecipe, fetchRecipeFromUrl, SAMPLE_RECIPES, generateSimplifiedRecipe } from '@/lib/recipeAnalyzer';
+import { useDifficultyConfigStore } from '@/store/difficultyConfig';
 import AnalysisCard from '@/components/AnalysisCard';
 import {
   ChefHat,
@@ -12,10 +14,12 @@ import {
   Lightbulb,
   XCircle,
   HelpCircle,
+  Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function Home() {
+  const navigate = useNavigate();
   const [inputMode, setInputMode] = useState<InputMode>('text');
   const [inputText, setInputText] = useState('');
   const [inputUrl, setInputUrl] = useState('');
@@ -24,6 +28,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentRecipeText, setCurrentRecipeText] = useState('');
+  const config = useDifficultyConfigStore((s) => s.config);
 
   const handleAnalyze = async () => {
     setIsLoading(true);
@@ -58,7 +63,7 @@ export default function Home() {
       }
 
       await new Promise(resolve => setTimeout(resolve, 800));
-      const result = analyzeRecipe(content);
+      const result = analyzeRecipe(content, config);
       
       if (result.success) {
         setAnalysis(result.data);
@@ -97,6 +102,15 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <header className="text-center mb-10">
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={() => navigate('/settings')}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-gray-500 hover:text-orange-600 hover:bg-orange-50 transition-all text-sm font-medium"
+            >
+              <Settings className="w-4 h-4" />
+              难度配置
+            </button>
+          </div>
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl shadow-lg mb-4">
             <ChefHat className="w-8 h-8 text-white" />
           </div>

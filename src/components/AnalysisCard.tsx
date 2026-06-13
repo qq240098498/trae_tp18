@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { RecipeAnalysis, SimplifiedRecipe } from '@/types/recipe';
 import { saveSimplificationRating } from '@/lib/recipeAnalyzer';
+import { useDifficultyConfigStore } from '@/store/difficultyConfig';
 import DifficultyStars from './DifficultyStars';
 import {
   ChefHat,
@@ -26,12 +27,6 @@ interface AnalysisCardProps {
   analysis: RecipeAnalysis;
   onGenerateSimplified?: (analysis: RecipeAnalysis) => SimplifiedRecipe;
 }
-
-const complexityLabels = {
-  simple: { text: '简单', color: 'text-emerald-600 bg-emerald-50' },
-  moderate: { text: '中等', color: 'text-yellow-600 bg-yellow-50' },
-  complex: { text: '复杂', color: 'text-red-600 bg-red-50' },
-};
 
 const iconMap: Record<string, React.ElementType> = {
   Oven: () => <span className="text-lg">🔥</span>,
@@ -307,6 +302,7 @@ export default function AnalysisCard({
   const [showSimplified, setShowSimplified] = useState(!!analysis.simplifiedRecipe);
   const [simplified, setSimplified] = useState<SimplifiedRecipe | null>(analysis.simplifiedRecipe || null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const complexityLabels = useDifficultyConfigStore((s) => s.config.complexityLabels);
 
   const handleGenerateSimplified = async () => {
     setIsGenerating(true);

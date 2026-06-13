@@ -1,4 +1,6 @@
 import type { RecipeAnalysis, SpecialTechnique, ToolRequirement, AnalysisResult, RecipeValidationResult, SimplifiedRecipe } from '@/types/recipe';
+import type { DifficultyConfig } from '@/types/difficultyConfig';
+import { DEFAULT_DIFFICULTY_CONFIG } from '@/types/difficultyConfig';
 
 const SPECIAL_TECHNIQUES: { name: string; keywords: string[] }[] = [
   { name: '颠勺', keywords: ['颠勺', '颠锅', '翻炒均匀', '大火快炒', '抛炒'] },
@@ -125,7 +127,7 @@ function countSteps(text: string): number {
   return Math.max(numberedSteps.length, bulletSteps.length, explicitSteps.length, Math.floor(lineBreaks / 2), 1);
 }
 
-function estimateIngredientCount(text: string): { count: number; complexity: 'simple' | 'moderate' | 'complex' } {
+function estimateIngredientCount(text: string, config: DifficultyConfig): { count: number; complexity: 'simple' | 'moderate' | 'complex' } {
   const ingredientSection = text.match(/(食材|原料|材料|配料|用料|INGREDIENTS)[\s\S]{0,500}/i);
   const targetText = ingredientSection ? ingredientSection[0] : text;
   
@@ -143,91 +145,91 @@ function estimateIngredientCount(text: string): { count: number; complexity: 'si
   count = Math.min(count, 30);
   
   let complexity: 'simple' | 'moderate' | 'complex' = 'simple';
+  const thresholds = config.ingredientComplexityThresholds;
   const complexCount = COMPLEX_INGREDIENTS.filter(ing => text.includes(ing)).length;
   const uniqueIngredients = new Set(
     text.split(/[，,、;；\n\s]+/).filter(s => s.length > 1 && /[\u4e00-\u9fa5]/.test(s))
   ).size;
   
-  if (complexCount >= 3 || uniqueIngredients > 15 || count > 12) {
+  if (complexCount >= thresholds.complexIngredientCount || uniqueIngredients > thresholds.complexUniqueIngredientCount || count > thresholds.complexTotalCount) {
     complexity = 'complex';
-  } else if (complexCount >= 1 || uniqueIngredients > 8 || count > 7) {
+  } else if (complexCount >= thresholds.moderateIngredientCount || uniqueIngredients > thresholds.moderateUniqueIngredientCount || count > thresholds.moderateTotalCount) {
     complexity = 'moderate';
   }
   
   return { count, complexity };
 }
 
-function determineStepComplexity(stepCount: number, techniques: SpecialTechnique[]): 'simple' | 'moderate' | 'complex' {
+function determineStepComplexity(stepCount: number, techniques: SpecialTechnique[], config: DifficultyConfig): 'simple' | 'moderate' | 'complex' {
+  const thresholds = config.stepComplexityThresholds;
   const detectedTechniques = techniques.filter(t => t.detected).length;
   
-  if (stepCount > 10 || detectedTechniques >= 4) return 'complex';
-  if (stepCount > 6 || detectedTechniques >= 2) return 'moderate';
+  if (stepCount > thresholds.complexStepThreshold || detectedTechniques >= thresholds.complexTechThreshold) return 'complex';
+  if (stepCount > thresholds.moderateStepThreshold || detectedTechniques >= thresholds.moderateTechThreshold) return 'moderate';
   return 'simple';
 }
 
-function calculateDifficulty(analysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor' | 'shouldSimplify' | 'simplifiedRecipe'>): {
+function calculateDifficulty(analysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor' | 'shouldSimplify' | 'simplifiedRecipe'>, config: DifficultyConfig): {
   score: number;
   stars: 1 | 2 | 3 | 4 | 5;
   label: string;
 } {
+  const weights = config.scoringWeights;
+  const stepScoring = config.stepScoring;
   let score = 0;
   
-  if (analysis.stepCount <= 3) score += 1;
-  else if (analysis.stepCount <= 6) score += 2;
-  else if (analysis.stepCount <= 10) score += 3;
-  else score += 4;
+  if (analysis.stepCount <= stepScoring.simpleMax) score += stepScoring.simpleScore;
+  else if (analysis.stepCount <= stepScoring.moderateMax) score += stepScoring.moderateScore;
+  else if (analysis.stepCount <= stepScoring.complexMax) score += stepScoring.complexScore;
+  else score += stepScoring.veryComplexScore;
   
   const techCount = analysis.specialTechniques.filter(t => t.detected).length;
-  score += techCount * 0.8;
+  score += techCount * weights.techniqueWeight;
   
-  if (analysis.ingredientComplexity === 'simple') score += 0.5;
-  else if (analysis.ingredientComplexity === 'moderate') score += 1.5;
-  else score += 2.5;
+  if (analysis.ingredientComplexity === 'simple') score += weights.ingredientSimpleScore;
+  else if (analysis.ingredientComplexity === 'moderate') score += weights.ingredientModerateScore;
+  else score += weights.ingredientComplexScore;
   
   const toolCount = analysis.tools.filter(t => t.detected).length;
-  score += toolCount * 0.4;
+  score += toolCount * weights.toolWeight;
   
-  if (analysis.stepComplexity === 'simple') score += 0;
-  else if (analysis.stepComplexity === 'moderate') score += 1;
-  else score += 2;
+  if (analysis.stepComplexity === 'simple') score += weights.stepComplexitySimpleScore;
+  else if (analysis.stepComplexity === 'moderate') score += weights.stepComplexityModerateScore;
+  else score += weights.stepComplexityComplexScore;
   
   const hasOven = analysis.tools.find(t => t.name === '烤箱' || t.name === '空气炸锅')?.detected;
   const hasBlender = analysis.tools.find(t => t.name === '料理机')?.detected;
-  if (hasOven) score += 0.5;
-  if (hasBlender) score += 0.3;
+  if (hasOven) score += weights.ovenBonus;
+  if (hasBlender) score += weights.blenderBonus;
   
-  const normalizedScore = Math.min(score / 12, 1);
+  const normalizedScore = Math.min(score / weights.normalizationDivisor, 1);
   const stars = Math.max(1, Math.min(5, Math.ceil(normalizedScore * 5))) as 1 | 2 | 3 | 4 | 5;
   
-  const labels: Record<number, string> = {
-    1: '入门级',
-    2: '简单',
-    3: '中等难度',
-    4: '进阶',
-    5: '大师级',
-  };
+  const levelConfig = config.levels.find(l => l.stars === stars);
+  const label = levelConfig?.label || '未知';
   
   return {
     score: Math.round(normalizedScore * 100) / 100,
     stars,
-    label: labels[stars],
+    label,
   };
 }
 
-function generateSuitableFor(analysis: RecipeAnalysis): string {
-  const { difficultyStars, specialTechniques, ingredientComplexity, tools } = analysis;
+function generateSuitableFor(analysis: RecipeAnalysis, config: DifficultyConfig): string {
+  const { difficultyStars, specialTechniques, ingredientComplexity } = analysis;
   const detectedTechs = specialTechniques.filter(t => t.detected).map(t => t.name);
-  const detectedTools = tools.filter(t => t.detected).map(t => t.name);
+  const detectedTools = analysis.tools.filter(t => t.detected).map(t => t.name);
+  const levelConfig = config.levels.find(l => l.stars === difficultyStars);
   
-  if (difficultyStars === 1) {
-    return '零基础新手友好，无需烹饪经验，适合厨房小白入门。';
+  if (difficultyStars === 1 || difficultyStars === 5) {
+    return levelConfig?.suitableForDefault || '请参考难度说明。';
   }
   
   if (difficultyStars === 2) {
     if (ingredientComplexity === 'simple') {
-      return '适合初学者，步骤简单，只需掌握基本烹饪技巧即可完成。';
+      return levelConfig?.suitableForSimple || '适合初学者。';
     }
-    return '适合有过几次下厨经验的新手，食材处理稍有讲究。';
+    return levelConfig?.suitableForDefault || '适合新手。';
   }
   
   if (difficultyStars === 3) {
@@ -241,7 +243,7 @@ function generateSuitableFor(analysis: RecipeAnalysis): string {
     if (tips.length > 0) {
       return `适合有半年以上烹饪经验的爱好者，${tips.join('，')}。`;
     }
-    return '适合有一定烹饪基础的爱好者，需要按步骤耐心操作。';
+    return levelConfig?.suitableForDefault || '适合有一定烹饪基础的爱好者。';
   }
   
   if (difficultyStars === 4) {
@@ -251,7 +253,7 @@ function generateSuitableFor(analysis: RecipeAnalysis): string {
   return `专业级挑战！${detectedTechs.length > 0 ? `需精通${detectedTechs.slice(0, 3).join('、')}等高阶技能` : '工艺复杂'}，适合资深厨艺爱好者或专业厨师尝试。`;
 }
 
-export function analyzeRecipe(input: string): AnalysisResult {
+export function analyzeRecipe(input: string, config: DifficultyConfig = DEFAULT_DIFFICULTY_CONFIG): AnalysisResult {
   const text = input.trim();
   
   const validation = validateRecipeContent(text);
@@ -271,8 +273,8 @@ export function analyzeRecipe(input: string): AnalysisResult {
   const specialTechniques = detectSpecialTechniques(text);
   const tools = detectTools(text);
   const stepCount = countSteps(text);
-  const { count: ingredientCount, complexity: ingredientComplexity } = estimateIngredientCount(text);
-  const stepComplexity = determineStepComplexity(stepCount, specialTechniques);
+  const { count: ingredientCount, complexity: ingredientComplexity } = estimateIngredientCount(text, config);
+  const stepComplexity = determineStepComplexity(stepCount, specialTechniques, config);
   
   const baseAnalysis: Omit<RecipeAnalysis, 'difficultyScore' | 'difficultyStars' | 'difficultyLabel' | 'suitableFor' | 'shouldSimplify' | 'simplifiedRecipe'> = {
     stepCount,
@@ -283,11 +285,12 @@ export function analyzeRecipe(input: string): AnalysisResult {
     tools,
   };
   
-  const { score, stars, label } = calculateDifficulty(baseAnalysis);
+  const { score, stars, label } = calculateDifficulty(baseAnalysis, config);
   
-  const shouldSimplify = stars >= 4 || (stars === 3 && (
-    specialTechniques.filter(t => t.detected).length >= 2 ||
-    tools.filter(t => t.detected).length >= 4
+  const thresholds = config.simplificationThresholds;
+  const shouldSimplify = stars >= thresholds.starThreshold || (stars >= thresholds.moderateStarThreshold && (
+    specialTechniques.filter(t => t.detected).length >= thresholds.moderateTechCount ||
+    tools.filter(t => t.detected).length >= thresholds.moderateToolCount
   ));
 
   const analysis: RecipeAnalysis = {
@@ -300,7 +303,7 @@ export function analyzeRecipe(input: string): AnalysisResult {
     simplifiedRecipe: undefined,
   };
   
-  analysis.suitableFor = generateSuitableFor(analysis);
+  analysis.suitableFor = generateSuitableFor(analysis, config);
   
   if (shouldSimplify) {
     analysis.simplifiedRecipe = generateSimplifiedRecipe(text, analysis);
