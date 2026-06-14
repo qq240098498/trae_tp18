@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useCartStore } from '@/store/cartStore';
+import { useOrderStore } from '@/store/orderStore';
 import { getIngredientById } from '@/data/shopData';
+import type { OrderType, TimeSlot } from '@/types/shop';
 import {
   X,
   Plus,
@@ -14,6 +16,11 @@ import {
   ArrowRight,
   AlertTriangle,
   PackageX,
+  Calendar,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,16 +39,63 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
   const stockError = useCartStore((s) => s.stockError);
   const clearStockError = useCartStore((s) => s.clearStockError);
   const checkout = useCartStore((s) => s.checkout);
+  const createOrder = useOrderStore((s) => s.createOrder);
+  const getTimeSlots = useOrderStore((s) => s.getTimeSlots);
 
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [localStockError, setLocalStockError] = useState<string | null>(null);
+  const [orderType, setOrderType] = useState<OrderType>('instant');
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null);
+  const [remark, setRemark] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const totalPrice = getTotalPrice();
   const deliveryFee = totalPrice >= 99 ? 0 : 8;
   const finalPrice = items.length > 0 ? totalPrice + deliveryFee : 0;
+
+  const availableDates = useMemo(() => {
+    const dates: Date[] = [];
+    const today = new Date();
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date);
+    }
+    return dates;
+  }, []);
+
+  const timeSlots = useMemo(() => {
+    return getTimeSlots(selectedDate);
+  }, [selectedDate, getTimeSlots]);
+
+  const formatDate = (date: Date) => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    if (date.toDateString() === today.toDateString()) return '今天';
+    if (date.toDateString() === tomorrow.toDateString()) return '明天';
+    const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    return `${date.getMonth() + 1}/${date.getDate()} ${weekDays[date.getDay()]}`;
+  };
+
+  const getReservationTimestamp = () => {
+    if (!selectedTimeSlot) return undefined;
+    const [hours, minutes] = selectedTimeSlot.startTime.split(':').map(Number);
+    const date = new Date(selectedDate);
+    date.setHours(hours, minutes, 0, 0);
+    return date.getTime();
+  };
+
+  const canSubmit = () => {
+    if (!deliveryAddress.trim() || !phone.trim()) return false;
+    if (stockCheckResult.hasStockError) return false;
+    if (orderType === 'reservation' && !selectedTimeSlot) return false;
+    return true;
+  };
 
   const stockCheckResult = useMemo(() => {
     let hasStockError = false;
@@ -85,7 +139,7 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
   };
 
   const handleCheckout = () => {
-    if (!deliveryAddress.trim() || !phone.trim()) return;
+    if (!canSubmit()) return;
     if (stockCheckResult.hasStockError) {
       setLocalStockError(`库存不足：${stockCheckResult.errorItems.join('、')}，请调整后再结算`);
       setTimeout(() => setLocalStockError(null), 4000);
@@ -96,10 +150,23 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
       const result = checkout();
       setIsCheckingOut(false);
       if (result.success) {
-        setOrderSuccess(true);
-        setTimeout(() => {
-          onClose();
-        }, 2500);
+        const order = createOrder({
+          type: orderType,
+          items,
+          totalPrice,
+          deliveryFee,
+          finalPrice,
+          deliveryAddress,
+          phone,
+          remark: remark.trim() || undefined,
+          reservationTime: orderType === 'reservation' ? getReservationTimestamp() : undefined,
+        });
+        if (order) {
+          setOrderSuccess(true);
+          setTimeout(() => {
+            onClose();
+          }, 2500);
+        }
       } else {
         const errorMsgs = result.errors.map((e) => `「${e.itemName}」仅剩${e.available}份`).join('、');
         setLocalStockError(`库存不足：${errorMsgs}，请调整后再结算`);
@@ -109,17 +176,32 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
   };
 
   if (orderSuccess) {
+    const isReservation = orderType === 'reservation';
+    const deliveryTimeText = isReservation && selectedTimeSlot
+      ? `${formatDate(selectedDate)} ${selectedTimeSlot.label}`
+      : '明天上午 9:00-12:00';
+
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
         <div className="bg-white rounded-3xl p-8 max-w-sm mx-4 text-center shadow-2xl">
           <div className="w-20 h-20 bg-gradient-to-br from-green-400 to-emerald-500 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg shadow-green-500/30">
             <CheckCircle2 className="w-10 h-10 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">下单成功！</h2>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            {isReservation ? '预约成功！' : '下单成功！'}
+          </h2>
           <p className="text-gray-600 mb-4">
-            您的食材订单已提交，预计明天上午 9:00-12:00 送达
+            {isReservation
+              ? `您的预约订单已提交，预计${deliveryTimeText}送达`
+              : '您的食材订单已提交，预计明天上午 9:00-12:00 送达'}
           </p>
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-left space-y-2">
+            {isReservation && (
+              <div className="flex items-center gap-2 text-sm text-green-800">
+                <Calendar className="w-4 h-4" />
+                <span>预约时间：{deliveryTimeText}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-green-800">
               <Truck className="w-4 h-4" />
               <span>配送地址：{deliveryAddress}</span>
@@ -323,6 +405,108 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                   </div>
 
                   <div className="space-y-3">
+                    <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                      <button
+                        onClick={() => setOrderType('instant')}
+                        className={cn(
+                          'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5',
+                          orderType === 'instant'
+                            ? 'bg-white text-emerald-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        )}
+                      >
+                        <Truck className="w-4 h-4" />
+                        立即配送
+                      </button>
+                      <button
+                        onClick={() => setOrderType('reservation')}
+                        className={cn(
+                          'flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5',
+                          orderType === 'reservation'
+                            ? 'bg-white text-emerald-600 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        )}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        预约配送
+                      </button>
+                    </div>
+
+                    {orderType === 'reservation' && (
+                      <div className="space-y-3 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <div className="flex items-center gap-2 text-sm font-medium text-emerald-800">
+                          <Clock className="w-4 h-4" />
+                          选择配送时间
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowCalendar(!showCalendar)}
+                            className="w-full flex items-center justify-between px-4 py-2.5 bg-white rounded-xl border border-emerald-200 text-sm"
+                          >
+                            <span className="text-gray-800">{formatDate(selectedDate)}</span>
+                            <ChevronRight className={cn('w-4 h-4 text-gray-400 transition-transform', showCalendar && 'rotate-90')} />
+                          </button>
+
+                          {showCalendar && (
+                            <div className="absolute top-full left-0 right-0 mt-2 p-3 bg-white rounded-xl shadow-xl border border-gray-100 z-10">
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-medium text-gray-700">选择日期</span>
+                              </div>
+                              <div className="grid grid-cols-4 gap-2">
+                                {availableDates.map((date, idx) => {
+                                  const isSelected = date.toDateString() === selectedDate.toDateString();
+                                  return (
+                                    <button
+                                      key={idx}
+                                      onClick={() => {
+                                        setSelectedDate(date);
+                                        setSelectedTimeSlot(null);
+                                        setShowCalendar(false);
+                                      }}
+                                      className={cn(
+                                        'py-2 px-1 rounded-lg text-xs transition-all',
+                                        isSelected
+                                          ? 'bg-emerald-500 text-white'
+                                          : 'bg-gray-50 text-gray-600 hover:bg-emerald-50'
+                                      )}
+                                    >
+                                      <div>{formatDate(date).split(' ')[0]}</div>
+                                      <div className="text-[10px] opacity-70">{formatDate(date).split(' ')[1]}</div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="text-xs text-gray-500">选择时间段</div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {timeSlots.map((slot) => (
+                              <button
+                                key={slot.id}
+                                onClick={() => slot.available && setSelectedTimeSlot(slot)}
+                                disabled={!slot.available}
+                                className={cn(
+                                  'py-2 px-2 rounded-lg text-xs font-medium transition-all',
+                                  selectedTimeSlot?.id === slot.id
+                                    ? 'bg-emerald-500 text-white'
+                                    : slot.available
+                                    ? 'bg-white text-gray-600 hover:bg-emerald-50 border border-gray-200'
+                                    : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-100'
+                                )}
+                              >
+                                {slot.label}
+                                {!slot.available && <div className="text-[10px]">已约满</div>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <label className="text-xs font-medium text-gray-700 mb-1.5 block">
                         配送地址
@@ -347,6 +531,19 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                       />
                     </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-700 mb-1.5 block flex items-center gap-1">
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        订单备注
+                      </label>
+                      <textarea
+                        value={remark}
+                        onChange={(e) => setRemark(e.target.value)}
+                        placeholder="如有特殊要求请备注（选填）"
+                        rows={2}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"
+                      />
+                    </div>
                   </div>
 
                   <div className="flex gap-3">
@@ -358,15 +555,21 @@ export default function CartDrawer({ onClose }: CartDrawerProps) {
                     </button>
                     <button
                       onClick={handleCheckout}
-                      disabled={!deliveryAddress.trim() || !phone.trim() || stockCheckResult.hasStockError}
+                      disabled={!canSubmit()}
                       className={cn(
                         'flex-1 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2',
-                        deliveryAddress.trim() && phone.trim() && !stockCheckResult.hasStockError
+                        canSubmit()
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow-lg shadow-emerald-500/30'
                           : 'bg-gray-300 cursor-not-allowed'
                       )}
                     >
-                      {stockCheckResult.hasStockError ? '部分商品库存不足' : '立即结算'}
+                      {stockCheckResult.hasStockError
+                        ? '部分商品库存不足'
+                        : orderType === 'reservation' && !selectedTimeSlot
+                        ? '请选择预约时间'
+                        : orderType === 'reservation'
+                        ? '提交预约'
+                        : '立即结算'}
                       {!stockCheckResult.hasStockError && <ArrowRight className="w-4 h-4" />}
                     </button>
                   </div>

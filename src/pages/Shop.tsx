@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { RECIPE_COMBOS, INGREDIENTS, getIngredientById, generateComboFromRecipe } from '@/data/shopData';
 import { useCartStore } from '@/store/cartStore';
+import { useOrderStore } from '@/store/orderStore';
 import type { RecipeCombo, CuisineCategory } from '@/types/shop';
 import DifficultyStars from '@/components/DifficultyStars';
 import CartDrawer from '@/components/CartDrawer';
@@ -22,6 +23,7 @@ import {
   AlertTriangle,
   PackageX,
   Flame,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -61,7 +63,9 @@ export default function Shop() {
   const stockVersion = useCartStore((s) => s.stockVersion);
   const clearStockError = useCartStore((s) => s.clearStockError);
   const checkComboStock = useCartStore((s) => s.checkComboStock);
+  const orders = useOrderStore((s) => s.orders);
   const cartCount = getTotalCount();
+  const pendingOrdersCount = orders.filter((o) => o.status === 'confirmed' || o.status === 'delivering' || o.status === 'returning').length;
 
   useEffect(() => {
     if (stockError) {
@@ -175,17 +179,30 @@ export default function Shop() {
             </div>
           </div>
 
-          <button
-            onClick={() => setShowCart(true)}
-            className="relative w-12 h-12 rounded-xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-          >
-            <ShoppingCart className="w-5 h-5" />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
-                {cartCount > 99 ? '99+' : cartCount}
-              </span>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/orders')}
+              className="relative w-12 h-12 rounded-xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+            >
+              <ClipboardList className="w-5 h-5" />
+              {pendingOrdersCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {pendingOrdersCount > 99 ? '99+' : pendingOrdersCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setShowCart(true)}
+              className="relative w-12 h-12 rounded-xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-600 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+            >
+              <ShoppingCart className="w-5 h-5" />
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
+            </button>
+          </div>
         </header>
 
         <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white shadow-lg shadow-emerald-500/20 mb-6">
